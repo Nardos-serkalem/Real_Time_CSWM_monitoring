@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -7,8 +8,39 @@ from matplotlib.path import Path
 from datetime import datetime, date, timedelta, timezone
 import requests
 import time
-import os
 
+# --- SQLAlchemy imports ---
+from sqlalchemy import create_engine, Column, Integer, Float, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+BASE_DIR = os.path.dirname(__file__)
+
+print("BASE_DIR:", BASE_DIR)
+print("Looking for files:")
+print(os.path.join(BASE_DIR, "geomagnetic_equator.txt"))
+print(os.path.join(BASE_DIR, "Ethiopia_border.txt"))
+print(os.path.join(BASE_DIR, "GNSS_Stn.txt"))
+
+
+
+# --- Database setup ---
+DB_PATH = os.path.join(os.path.dirname(__file__), "tec_data.db")
+Base = declarative_base()
+
+class TEC(Base):
+    __tablename__ = "tec"
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime)   # UTC
+    lon = Column(Float)
+    lat = Column(Float)
+    tec = Column(Float)
+    f107 = Column(Float)
+
+engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+
+# --- Main function ---
 def main():
     print("EthTEC Auto-Refresh System Initialized")
     
@@ -50,15 +82,36 @@ def main():
             TECm = TEC.reshape(szl)
             
             # --- Load borders, GNSS, geomagnetic equator ---
-            gmea = pd.read_csv('geomagnetic_equator.txt', sep='\t', skiprows=1, header=None, names=['lon', 'lat'])
-            coast = pd.read_csv('Ethiopia_border.txt', sep=',')
-            GNSS = pd.read_csv('GNSS_Stn.txt', sep=',')
+            gmea_path = os.path.join(BASE_DIR, "geomagnetic_equator.txt")
+            coast_path = os.path.join(BASE_DIR, "Ethiopia_border.txt")
+            gnss_path = os.path.join(BASE_DIR, "GNSS_Stn.txt")
+
+            gmea = pd.read_csv(gmea_path, sep='\t', skiprows=1, header=None, names=['lon', 'lat'])
+            coast = pd.read_csv(coast_path)
+            GNSS = pd.read_csv(gnss_path)
             points = np.column_stack((long2.ravel(), lat2.ravel()))
             polygon = Path(np.column_stack((coast['Lon'].values, coast['Lat'].values)))
             TECm.ravel()[~polygon.contains_points(points)] = np.nan
             
             f_L1 = 1575.42e6
             k_L1 = 40.3e16 / f_L1**2
+            
+            # --- Insert TEC data into SQLite ---
+            db_session = Session()
+            for i in range(TECm.shape[0]):
+                for j in range(TECm.shape[1]):
+                    tec_value = TECm[i, j]
+                    if not np.isnan(tec_value):
+                        record = TEC(
+                            timestamp=now,
+                            lon=long2[i, j],
+                            lat=lat2[i, j],
+                            tec=tec_value,
+                            f107=f10p7
+                        )
+                        db_session.add(record)
+            db_session.commit()
+            db_session.close()
             
             # --- Plot TEC Map ---
             plt.close('all')
@@ -142,5 +195,36 @@ def net32D(X):
     LW2=np.array([0.0637,-0.0098,0.0098,0.4308,-0.057, -2.2412,0.7314,0.1329,1.227,0.482,0.0083,-0.0787,0.5285,2.2643,-0.1951,-1.2594,2.4512,-0.0102,3.1375,-0.2076,0.0403,1.0324,2.7086,-0.0004,0.0018,1.4623,3.4987,-0.1026,-0.4844,-0.3617,-1.6201,-0.3345])
     X=X.T;N=X.shape[1];yy=X-xoffset_in.reshape(-1,1);yy=yy*gain_in.reshape(-1,1);Xp1=yy+ymin_in;n1=np.tile(b1.reshape(-1,1),(1,N))+LW1@Xp1;a1=2/(1+np.exp(-2*n1))-1;n2=np.tile(b2,(1,N))+LW2@a1;a2=2/(1+np.exp(-2*n2))-1;xx2=a2-ymin_out;xx2=xx2/gain_out;Y=xx2+xoffset_out;return Y.T
 
-if __name__ == "__main__":
-    main()
+def main_with_stop(stop_event=None):
+    print("EthTEC Auto-Refresh System Initialized")
+    
+    plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    while True:
+        if stop_event and stop_event.is_set():
+            print("EthTEC collector stopping...")
+            break
+        
+        try:
+            now = datetime.now(timezone.utc)
+            print(f"\nProcessing TEC data for {now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+            
+            # --- rest of your code ---
+            
+            next_run = now + timedelta(minutes=1)
+            sleep_time = max(0, (next_run - datetime.now(timezone.utc)).total_seconds())
+
+            # Sleep in small intervals to allow stop_event to interrupt
+            slept = 0
+            while slept < sleep_time:
+                if stop_event and stop_event.is_set():
+                    print("EthTEC collector stopping...")
+                    return
+                time.sleep(min(1, sleep_time - slept))
+                slept += 1
+
+        except Exception as e:
+            print(f"Error encountered in EthTEC.py: {e}")
+            time.sleep(60)
+

@@ -13,6 +13,8 @@ from scipy.stats import zscore
 import matplotlib.dates as mdates
 from matplotlib.patches import Patch
 import matplotlib
+from sqlalchemy import create_engine, Column, Integer, Float, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
 matplotlib.use('Agg')
 
 
@@ -27,13 +29,31 @@ plt.style.use('dark_background')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
+base_dir = os.path.dirname(__file__)
+plots_dir = os.path.join(base_dir, "assets", "plots")
+os.makedirs(plots_dir, exist_ok=True)
+
+DB_FILE = os.path.join(base_dir, "..", "db.sqlite")
+
+# -------------------------------
+# DATABASE SETUP
+# -------------------------------
+Base = declarative_base()
+
+class TECData(Base):
+    __tablename__ = "k_index_data"
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, unique=True)
+    value = Column(Float)
+
+engine = create_engine(f"sqlite:///{DB_FILE}")
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+
 ftp_server = "ftp.gfz-potsdam.de"
 ftp_path = "/pub/home/obs/data/iaga2002/ENT0/"
 station_code = "ent"
 temp_dir = tempfile.gettempdir()
-
-plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
-os.makedirs(plots_dir, exist_ok=True)
 
 def list_ftp_files(ftp, path):
     files = []
@@ -314,50 +334,58 @@ def plot_k_indices_with_derivatives(data, k_indices, k_times, station_name=""):
 
 
 def main_loop():
-    plt.ion() 
     while True:
         try:
-            logging.info("Starting data fetch and processing...")
+            logging.info("Fetching FTP files...")
             files = get_ftp_files()
             if not files:
-                logging.warning("No files downloaded, waiting for next attempt")
-                time.sleep(update_interval_minutes * 60)
+                logging.warning("No files downloaded, waiting for next cycle")
+                time.sleep(update_interval_minutes*60)
                 continue
+
             all_data = pd.DataFrame()
-            station_name = station_code.upper()
             components = None
-            
-            for file_path in files:
-                data, comps, name = read_iaga2002(file_path)
+            for fpath in files:
+                data, comps = read_iaga2002(fpath)
                 if not data.empty:
                     all_data = pd.concat([all_data, data], ignore_index=True)
                     if components is None:
                         components = comps
-                        station_name = name
-            
             if all_data.empty:
-                logging.warning("No valid data processed, waiting for next attempt")
-                time.sleep(update_interval_minutes * 60)
+                logging.warning("No valid data processed, waiting for next cycle")
+                time.sleep(update_interval_minutes*60)
                 continue
+
             all_data = preprocess_data(all_data, components)
             all_data.sort_values("DATETIME", inplace=True)
             times_float = time_to_float(all_data["DATETIME"])
             comp_x = all_data[components[0]].values
             comp_y = all_data[components[1]].values
-            
             k_indices, k_times = calculate_k_index(times_float, comp_x, comp_y, k9_limit)
-            
-            if len(k_indices) > 0:
-                plot_k_indices_with_derivatives(all_data, k_indices, k_times, station_name)
-            else:
-                logging.warning("No K-indices calculated")
-            
+
+            if len(k_indices)>0:
+                plot_k_indices_with_derivatives(all_data, k_indices, k_times)
+                # Save to DB
+                try:
+                    session = Session()
+                    for t,k in zip(k_times,k_indices):
+                        timestamp = datetime.utcfromtimestamp(t)
+                        session.merge(TECData(timestamp=timestamp, value=float(k)))
+                    session.commit()
+                    session.close()
+                    logging.info("K-index data saved to database")
+                except Exception as e:
+                    logging.error(f"Error saving to DB: {e}")
+
             logging.info(f"Sleeping for {update_interval_minutes} minutes...")
-            time.sleep(update_interval_minutes * 60)
-            
+            time.sleep(update_interval_minutes*60)
         except Exception as e:
             logging.error(f"Error in main loop: {e}")
-            time.sleep(60)  
-
-if __name__ == "__main__":
+            time.sleep(60)
+def run_ent_kindex(update_interval_minutes_param=10):
+    """Wrapper to run the ENT K-index collector with a specified update interval."""
+    global update_interval_minutes
+    update_interval_minutes = update_interval_minutes_param  # assign to module-level variable
     main_loop()
+
+

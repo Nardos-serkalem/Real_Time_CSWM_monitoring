@@ -12,8 +12,20 @@ import glob
 import subprocess
 import matplotlib
 matplotlib.use('Agg')  # Use a non-interactive backend like 'Agg'
-#matplotlib.use('TkAgg')  # or 'Qt5Agg'
-#os.environ["QT_QPA_PLATFORM"] = "xcb"  # Use X11 instead of Wayland
+import os
+from datetime import datetime, timedelta, timezone
+
+BASE_DIR = os.path.dirname(__file__)
+
+local_dir = os.path.join(BASE_DIR, "assets", "ismr")
+os.makedirs(local_dir, exist_ok=True)
+
+plots_dir = os.path.join(BASE_DIR, "assets", "plots")
+os.makedirs(plots_dir, exist_ok=True)
+
+print("BASE_DIR:", BASE_DIR)
+print("ISMR directory:", local_dir)
+print("Plots directory:", plots_dir)
 
 # FTP server credentials
 ftp_server = "ftp.gnss.sansa.org.za"
@@ -21,10 +33,6 @@ username = "ngiday"
 password = "j8dheeZJ"
 # Local directory for ISMR files
 # new
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
-os.makedirs(plots_dir, exist_ok=True)
-
 
 # Function to get the last three days
 def get_last_three_days():
@@ -311,7 +319,7 @@ def plot_continuous_timeseries(S4_pi, bg_color='black', plot_bg='black'):
 
     # Save figure
     plt.tight_layout()
-    plt.savefig(os.path.join(local_dir, 'ENTG_S4_pi.png'), edgecolor='white', facecolor=fig.get_facecolor())
+    plt.savefig(os.path.join(plots_dir, 'ENTG_S4_pi.png'), edgecolor='white', facecolor=fig.get_facecolor())
     plt.close()
 
 

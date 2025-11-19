@@ -22,8 +22,8 @@ password = "j8dheeZJ"
 # Local directory for ISMR files
 # new
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-local_dir = os.path.join(base_dir, "static", "plots")
-os.makedirs(local_dir, exist_ok=True)
+plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
+os.makedirs(plots_dir, exist_ok=True)
 
 
 # Function to get the last three days

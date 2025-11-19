@@ -13,7 +13,7 @@ def main():
     print("EthTEC Auto-Refresh System Initialized")
     
     # --- Fixed plots directory ---
-    plots_dir = r"C:\Users\Lenovo\Desktop\spaceweatherDashboard\static\plots"
+    plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
     os.makedirs(plots_dir, exist_ok=True)
     
     while True:

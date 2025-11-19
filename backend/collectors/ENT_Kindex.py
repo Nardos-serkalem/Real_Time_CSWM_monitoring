@@ -32,7 +32,7 @@ ftp_path = "/pub/home/obs/data/iaga2002/ENT0/"
 station_code = "ent"
 temp_dir = tempfile.gettempdir()
 
-plots_dir = r"C:\Users\Lenovo\Desktop\spaceweatherDashboard\static\plots"
+plots_dir = os.path.join(os.path.dirname(__file__), "assets", "plots")
 os.makedirs(plots_dir, exist_ok=True)
 
 def list_ftp_files(ftp, path):

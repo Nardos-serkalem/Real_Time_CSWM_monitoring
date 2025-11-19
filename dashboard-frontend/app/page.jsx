@@ -1,49 +1,92 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-export default function Home() {
-  const [plots, setPlots] = useState([]); // remove <string[]>
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+export default function Dashboard() {
+  const [plots, setPlots] = useState([]);
+  const [status, setStatus] = useState({
+    system: "Operational",
+    lastUpdate: "",
+    kpIndex: 0,
+    solarFlux: 0,
+    protonFlux: 0,
+    magneticField: 0,
+  });
 
   useEffect(() => {
-    const fetchPlots = async () => {
-      try {
-        const res = await fetch('http://127.0.0.1:5000/plots');
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
-        const data = await res.json(); // remove : string[]
-        setPlots(data);
-      } catch (err) {
-        console.error('Error fetching plots:', err);
-        setError(err.message || 'Unknown error'); // remove : any
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPlots();
+    // Fetch plot images from backend
+    fetch("http://127.0.0.1:5000/plots")
+      .then((res) => res.json())
+      .then((data) => {
+        // Ensure data.plots exists and is an array
+        if (data && Array.isArray(data.plots)) {
+          setPlots(data.plots);
+        } else {
+          console.error("Backend returned invalid plots:", data);
+          setPlots([]);
+        }
+      })
+      .catch((err) => {
+        console.error("Error fetching plots:", err);
+        setPlots([]);
+      });
+
+    // Fetch system status
+    fetch("http://127.0.0.1:5000/status")
+      .then((res) => res.json())
+      .then((data) => setStatus(data))
+      .catch((err) => console.error("Error fetching status:", err));
   }, []);
 
-  if (loading) return <p style={{ color: '#fff' }}>Loading plots...</p>;
-  if (error) return <p style={{ color: 'red' }}>Error: {error}</p>;
-
   return (
-    <div style={{ padding: '2rem', background: '#111', color: '#fff', minHeight: '100vh' }}>
-      <h1>Space Weather Real Time Monitering</h1>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      {/* Header */}
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Real-time Monitoring
+        </h1>
+        <p className="text-gray-700 mb-1">
+          Ethiopia Space Weather Early Warning System
+        </p>
+        <p className="text-gray-700">
+          System Status: <span className="font-semibold">{status.system}</span>
+          &nbsp;| Last Update: {status.lastUpdate}
+        </p>
+      </header>
 
-      {plots.length === 0 ? (
-        <p>No plots available.</p>
-      ) : (
-        plots.map((plot) => (
-          <div key={plot} style={{ marginBottom: '2rem' }}>
-            <h3>{plot}</h3>
+      {/* Alerts / Quick Info */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-red-100 text-red-800 p-4 rounded shadow">
+          <p className="text-sm">Kp Index</p>
+          <p className="text-xl font-bold">{status.kpIndex}</p>
+        </div>
+        <div className="bg-blue-100 text-blue-800 p-4 rounded shadow">
+          <p className="text-sm">S4_Pi</p>
+          <p className="text-xl font-bold">{status.solarFlux}</p>
+        </div>
+        <div className="bg-yellow-100 text-yellow-800 p-4 rounded shadow">
+          <p className="text-sm">VTEC</p>
+          <p className="text-xl font-bold">{status.protonFlux}</p>
+        </div>
+        <div className="bg-green-100 text-green-800 p-4 rounded shadow">
+          <p className="text-sm">Magnetic Field</p>
+          <p className="text-xl font-bold">{status.magneticField} nT</p>
+        </div>
+      </div>
+
+      {/* Main Plots */}
+      {Array.isArray(plots) && plots.length > 0 ? (
+        plots.map((plot, idx) => (
+          <div key={idx} className="mb-6">
             <img
               src={`http://127.0.0.1:5000/plots/${plot}`}
               alt={plot}
-              style={{ maxWidth: '100%', borderRadius: '8px' }}
+              className="w-full rounded shadow-lg"
             />
           </div>
         ))
+      ) : (
+        <p className="text-gray-500">No plots available</p>
       )}
     </div>
   );
